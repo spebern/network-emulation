@@ -1,0 +1,12 @@
+#- capacity: 100000.0
+#  gilbert_elliot_config:
+#    prob_good_to_bad: 0.2
+#    prob_bad_to_good: 0.6
+#    err_rate_good: 0.01
+#    err_rate_bad: 0.1
+- capacity: 100000.0
+  gilbert_elliot_config:
+    prob_good_to_bad: 0.0
+    prob_bad_to_good: 1.0
+    err_rate_good: 0.0
+    err_rate_bad: 0.0
