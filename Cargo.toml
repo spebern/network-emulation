@@ -21,3 +21,4 @@ lazy_static = "1.4.0"
 
 [dev-dependencies]
 csv = "1"
+rusty-hook = "0.10"
