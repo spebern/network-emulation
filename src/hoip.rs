@@ -2,39 +2,57 @@ use bitvec::prelude::*;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Cursor, Read, Write};
 
+/// The payload type of this message.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PayloadType {
     Master,
     Slave,
 }
 
+/// The sampling method used.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SamplingScheme {
+    /// Lossless sampling.
     Lossless,
+    /// Sampling based on Weber thresholds.
     Weber,
+    /// Sampling based on level crossing.
     LevelCrossing,
 }
 
+/// Where delays are saved to.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DelayIndicator {
+    /// Delay is saved inside of the header.
     InHeader,
+    /// Delay is saved inside of the payload.
     InPayload,
 }
 
+/// The header of a `hoip` message.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Header {
     pub payload_type: PayloadType,
     pub sampling_scheme: SamplingScheme,
+    /// The number of samples that are stored inside of the payload.
+    /// This depends on the compression parameter `k`.
     pub num_samples: u8,
+    /// Where the delays are stored.
     pub delay_indicator: DelayIndicator,
+    /// The threshold currently used (e.g. for Weber/LevelCrossing)
     pub threshold: u16,
-    pub notification_delay: u32,
+    /// The latest rott that was measured by the network module.
+    pub rott: u32,
+    /// The timestamp of when this message was sent away.
     pub timestamp: u64,
 }
 
+/// A message governed by the `hoip` protocol.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Message {
+    /// The header of the message describing the content.
     pub header: Header,
+    /// The content containing the samples.
     pub payload: Vec<u8>,
 }
 
@@ -62,10 +80,13 @@ impl PayloadM2S {
 }
 
 pub trait Serializable {
+    /// Returns the length of the message in bytes.
     fn len() -> usize;
 
+    /// Deserializes from bytes.
     fn from_bytes(bs: &[u8]) -> Self;
 
+    /// Serializes to bytes.
     fn to_bytes(self) -> Vec<u8>;
 }
 
@@ -149,8 +170,8 @@ impl Message {
 
         wtr.write_u8(byte).unwrap();
         wtr.write_u16::<BigEndian>(self.header.threshold).unwrap();
-        let notification_delay = std::cmp::min(0xFFFFFF, self.header.notification_delay);
-        wtr.write_u24::<BigEndian>(notification_delay).unwrap();
+        let rott = std::cmp::min(0xFFFFFF, self.header.rott);
+        wtr.write_u24::<BigEndian>(rott).unwrap();
         wtr.write_u64::<BigEndian>(self.header.timestamp).unwrap();
 
         wtr.write_all(&self.payload).unwrap();
@@ -184,7 +205,7 @@ impl Message {
         };
 
         let threshold = rdr.read_u16::<BigEndian>().unwrap();
-        let notification_delay = rdr.read_u24::<BigEndian>().unwrap();
+        let rott = rdr.read_u24::<BigEndian>().unwrap();
         let timestamp = rdr.read_u64::<BigEndian>().unwrap();
 
         let mut payload = Vec::with_capacity(bs.len() - 14);
@@ -197,15 +218,15 @@ impl Message {
                 num_samples,
                 delay_indicator,
                 threshold,
-                notification_delay,
+                rott,
                 timestamp,
             },
             payload,
         }
     }
 
-    pub fn notification_delay(&self) -> u32 {
-        self.header.notification_delay
+    pub fn rott(&self) -> u32 {
+        self.header.rott
     }
 
     pub fn timestamp(&self) -> u64 {
@@ -242,7 +263,7 @@ mod tests {
                                 num_samples,
                                 delay_indicator,
                                 threshold: 10,
-                                notification_delay: 1,
+                                rott: 1,
                                 timestamp: std::u64::MAX,
                             },
                             payload: vec![1, 2, 3],

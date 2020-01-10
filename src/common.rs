@@ -5,7 +5,7 @@ lazy_static! {
     static ref INITIAL_TS: Instant = Instant::now();
 }
 
-pub fn timestamp() -> u64 {
+pub fn now() -> u64 {
     let now = Instant::now();
     if now < *INITIAL_TS {
         0
