@@ -3,8 +3,9 @@ extern crate network_emulator;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use csv::Writer;
 use network_emulator::{
+    congestion_detection::{self, CongestionDetector},
     hoip::{PayloadM2S, PayloadS2M, PayloadType, Serializable},
-    k_selector, now, setup_network_emulator, KSelector, NetworkModule,
+    now, setup_network_emulator, KPolicy, KPolicySIMD, KPolicySISD, NetworkModule,
 };
 use serde::Serialize;
 use std::{
@@ -58,9 +59,10 @@ fn write_simulation_results(i: usize, rx_record: Receiver<Record>) {
 pub fn run_network<
     A: 'static + Send + Clone + Serializable,
     B: 'static + Send + Serializable,
-    K: 'static + Send + KSelector,
+    CD: 'static + Send + CongestionDetector,
+    KP: 'static + Send + KPolicy,
 >(
-    mut network_module: NetworkModule<A, B, K>,
+    mut network_module: NetworkModule<A, B, CD, KP>,
     op: OP,
     running: Arc<AtomicBool>,
     tx_record: Sender<Record>,
@@ -89,24 +91,32 @@ pub fn run_network<
     })
 }
 
-fn run_simulation<KM: 'static + Send + KSelector, KS: 'static + Send + KSelector>(
+fn run_simulation<
+    CDM: 'static + Send + CongestionDetector,
+    CDS: 'static + Send + CongestionDetector,
+    KPM: 'static + Send + KPolicy,
+    KPS: 'static + Send + KPolicy,
+>(
     i: usize,
     simulation_time: Duration,
-    k_selector_master: KM,
-    k_selector_slave: KS,
+    congestion_detector_mater: CDM,
+    congestion_detector_slave: CDS,
     w: f64,
+    cooloff: usize,
 ) {
-    let master = NetworkModule::<PayloadM2S, PayloadS2M, KM>::new(
+    let master = NetworkModule::<PayloadM2S, PayloadS2M, CDM, KPM>::new(
         PayloadType::Master,
         true,
-        k_selector_master,
+        congestion_detector_mater,
         w,
+        10,
     );
-    let slave = NetworkModule::<PayloadS2M, PayloadM2S, KS>::new(
+    let slave = NetworkModule::<PayloadS2M, PayloadM2S, CDS, KPS>::new(
         PayloadType::Slave,
         true,
-        k_selector_slave,
+        congestion_detector_slave,
         w,
+        10,
     );
 
     let simulation_running = Arc::new(AtomicBool::new(true));
@@ -148,16 +158,33 @@ fn main() -> Result<(), Box<dyn Error>> {
     let simulation_time = Duration::from_secs(10);
 
     for (i, rate_kbs) in (400..=600).step_by(50).enumerate() {
+        /*
         let w = 0.1;
         let n = 8;
         println!("n: {}, rate: {}, w: {}", n, rate_kbs, w);
 
+
         let k_selector_master = k_selector::window::KSelectorWindow::new(n);
         let k_selector_slave = k_selector::window::KSelectorWindow::new(n);
+        */
+        let w = 0.1;
+        let cooloff = 5;
+
+        println!("cooloff: {}, rate: {}, w: {}", cooloff, rate_kbs, w);
+
+        let congestion_detector_mater = congestion_detection::ZigZag::new();
+        let congestion_detector_slave = congestion_detection::ZigZag::new();
 
         setup_network_emulator(rate_kbs, 3);
         std::thread::sleep(Duration::from_secs(3));
-        run_simulation(i, simulation_time, k_selector_master, k_selector_slave, w);
+        run_simulation::<_, _, KPolicySIMD, KPolicySIMD>(
+            i,
+            simulation_time,
+            congestion_detector_mater,
+            congestion_detector_slave,
+            w,
+            cooloff,
+        );
     }
 
     Ok(())

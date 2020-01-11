@@ -1,6 +1,9 @@
+use crate::congestion_detection::{CongestionDetector, CongestionState};
 use crate::hoip::{DelayIndicator, Header, Message, PayloadType, SamplingScheme, Serializable};
 use crate::now;
+use std::cmp::{max, min};
 use std::io;
+use std::marker::PhantomData;
 use std::net::UdpSocket;
 
 const MASTER_ADDR: &'static str = "127.0.0.1:13370";
@@ -9,7 +12,7 @@ const SLAVE_ADDR: &'static str = "127.0.0.1:13380";
 pub const K_MAX: i8 = 4;
 pub const K_MIN: i8 = 1;
 
-struct NetworkAnalyzer<K> {
+struct NetworkAnalyzer<CD, KP> {
     // The estimated average delay.
     avg_rott: f64,
     // The estimated standard deviation of the delay.
@@ -18,33 +21,57 @@ struct NetworkAnalyzer<K> {
     k: i8,
     // The previous rott.
     prev_rott: u32,
-    // The selector for choosing the most suitable `k`.
-    k_selector: K,
+    // The congestion detector.
+    congestion_detector: CD,
     // The weight of the exponential decaying average used for
     // calculating the average delay and its variance.
     w: f64,
+    // The `k` adaption policy based on the congestion state.
+    _k_policy: PhantomData<KP>,
+    // The counter for counting ticks between state changes.
+    counter: usize,
+    // The number of ticks until k can be adjusted again.
+    cooloff: usize,
 }
 
-pub trait KSelector {
-    fn select_k(
-        &mut self,
-        current_k: i8,
-        rott: u32,
-        avg_rott: f64,
-        std_rott: f64,
-        prev_rott: u32,
-    ) -> i8;
+pub trait KPolicy {
+    fn select_k(congestion_state: CongestionState, current_k: i8) -> Option<i8>;
 }
 
-impl<K: KSelector> NetworkAnalyzer<K> {
-    fn new(k_selector: K, w: f64) -> Self {
+pub struct KPolicySISD;
+impl KPolicy for KPolicySISD {
+    fn select_k(congestion_state: CongestionState, current_k: i8) -> Option<i8> {
+        match congestion_state {
+            CongestionState::NotSure => None,
+            CongestionState::Congested => Some(min(K_MAX, current_k + 1)),
+            CongestionState::NotCongested => Some(max(K_MIN, current_k - 1)),
+        }
+    }
+}
+
+pub struct KPolicySIMD;
+impl KPolicy for KPolicySIMD {
+    fn select_k(congestion_state: CongestionState, current_k: i8) -> Option<i8> {
+        match congestion_state {
+            CongestionState::NotSure => None,
+            CongestionState::Congested => Some(K_MAX),
+            CongestionState::NotCongested => Some(max(K_MIN, current_k - 1)),
+        }
+    }
+}
+
+impl<CD: CongestionDetector, KP: KPolicy> NetworkAnalyzer<CD, KP> {
+    fn new(congestion_detector: CD, w: f64, cooloff: usize) -> Self {
         Self {
             avg_rott: 0.0,
             std_rott: 0.0,
             prev_rott: 0,
             k: K_MAX,
-            k_selector,
+            congestion_detector,
+            _k_policy: PhantomData,
             w,
+            cooloff,
+            counter: 0,
         }
     }
 
@@ -57,9 +84,21 @@ impl<K: KSelector> NetworkAnalyzer<K> {
     fn update_state(&mut self, rott: u32) {
         let (avg_rott, std_rott) = self.calc_avg_and_std_rott(rott);
 
-        self.k = self
-            .k_selector
-            .select_k(self.k, rott, avg_rott, std_rott, self.prev_rott);
+        let congestion_state =
+            self.congestion_detector
+                .is_congested(self.k, rott, avg_rott, std_rott, self.prev_rott);
+
+        if self.counter > self.cooloff {
+            match KP::select_k(congestion_state, self.k) {
+                Some(k) => {
+                    self.k = k;
+                    self.counter = 0;
+                }
+                None => self.counter += 1,
+            }
+        } else {
+            self.counter += 1;
+        }
 
         self.avg_rott = avg_rott;
         self.std_rott = std_rott;
@@ -67,7 +106,7 @@ impl<K: KSelector> NetworkAnalyzer<K> {
     }
 }
 
-pub struct NetworkModule<S, R, K> {
+pub struct NetworkModule<S, R, CD, KP> {
     sock: UdpSocket,
     adjust_k: bool,
     payloads: Vec<S>,
@@ -76,11 +115,19 @@ pub struct NetworkModule<S, R, K> {
     rott: u32,
     op: PayloadType,
     previous_timestamp: u64,
-    network_anaylzer: NetworkAnalyzer<K>,
+    network_anaylzer: NetworkAnalyzer<CD, KP>,
 }
 
-impl<S: Serializable, R: Serializable, K: KSelector> NetworkModule<S, R, K> {
-    pub fn new(op: PayloadType, adjust_k: bool, k_selector: K, w: f64) -> Self {
+impl<S: Serializable, R: Serializable, CD: CongestionDetector, KP: KPolicy>
+    NetworkModule<S, R, CD, KP>
+{
+    pub fn new(
+        op: PayloadType,
+        adjust_k: bool,
+        congestion_detector: CD,
+        w: f64,
+        cooloff: usize,
+    ) -> Self {
         let sock = match op {
             PayloadType::Master => {
                 let sock = UdpSocket::bind(MASTER_ADDR).unwrap();
@@ -103,7 +150,7 @@ impl<S: Serializable, R: Serializable, K: KSelector> NetworkModule<S, R, K> {
             msgs: Vec::new(),
             previous_timestamp: 0,
             msgs_offset: 0,
-            network_anaylzer: NetworkAnalyzer::new(k_selector, w),
+            network_anaylzer: NetworkAnalyzer::new(congestion_detector, w, cooloff),
         }
     }
 
@@ -160,7 +207,7 @@ impl<S: Serializable, R: Serializable, K: KSelector> NetworkModule<S, R, K> {
                     if let io::ErrorKind::WouldBlock = e.kind() {
                         break;
                     }
-                    unreachable!();
+                    panic!("{:}", e);
                 }
                 v => num_bytes = v.unwrap(),
             };

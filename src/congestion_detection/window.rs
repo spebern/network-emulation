@@ -1,6 +1,6 @@
-use crate::network::{KSelector, K_MAX, K_MIN};
+use super::{CongestionDetector, CongestionState};
 
-pub struct KSelectorWindow {
+pub struct Window {
     // The number of samples inside of a window.
     n: isize,
     // The previous `N` notification delays.
@@ -11,7 +11,7 @@ pub struct KSelectorWindow {
     increasing_rotts_in_a_row: isize,
 }
 
-impl KSelectorWindow {
+impl Window {
     pub fn new(n: isize) -> Self {
         Self {
             n,
@@ -30,9 +30,9 @@ impl KSelectorWindow {
     }
 }
 
-impl Default for KSelectorWindow {
+impl Default for Window {
     fn default() -> Self {
-        KSelectorWindow {
+        Window {
             n: 8,
             previous_rotts: vec![0; 8],
             counter: 0,
@@ -41,15 +41,15 @@ impl Default for KSelectorWindow {
     }
 }
 
-impl KSelector for KSelectorWindow {
-    fn select_k(
+impl CongestionDetector for Window {
+    fn is_congested(
         &mut self,
         current_k: i8,
         rott: u32,
         avg_rott: f64,
         _std_rott: f64,
         _prev_rott: u32,
-    ) -> i8 {
+    ) -> CongestionState {
         if rott as f64 > avg_rott {
             self.increasing_rotts_in_a_row += 1;
         } else {
@@ -64,8 +64,7 @@ impl KSelector for KSelectorWindow {
         // check if we exceeded the number of increasing delays in a row
         if self.increasing_rotts_in_a_row > self.n {
             self.reset();
-            // maximum throttle
-            return K_MAX;
+            return CongestionState::Congested;
         }
 
         let sum: f64 = self
@@ -77,7 +76,7 @@ impl KSelector for KSelectorWindow {
         let mut increasing_rotts = 0;
         for i in self.counter + 1..self.counter + self.n + 1 {
             if rott < (0.90 * avg) as _ || rott > (1.10 * avg) as _ {
-                return current_k;
+                return CongestionState::NotSure;
             }
             let i = (i % self.n) as usize;
             let next_rott = self.previous_rotts[i];
@@ -89,9 +88,9 @@ impl KSelector for KSelectorWindow {
 
         // if we don't have an increasing or decreasing tend try to increase k
         if increasing_rotts < self.n {
-            std::cmp::max(K_MIN, current_k - 1)
+            return CongestionState::NotCongested;
         } else {
-            current_k
+            return CongestionState::NotSure;
         }
     }
 }

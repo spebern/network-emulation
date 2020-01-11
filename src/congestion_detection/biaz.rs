@@ -1,28 +1,28 @@
-use crate::network::KSelector;
+use super::{CongestionDetector, CongestionState};
 
-pub struct KSelectorBiaz {}
+pub struct Biaz {}
 
-impl Default for KSelectorBiaz {
+impl Default for Biaz {
     fn default() -> Self {
         Self {}
     }
 }
 
-impl KSelectorBiaz {
+impl Biaz {
     pub fn new() -> Self {
         Self::default()
     }
 }
 
-impl KSelector for KSelectorBiaz {
-    fn select_k(
+impl CongestionDetector for Biaz {
+    fn is_congested(
         &mut self,
         _current_k: i8,
         _rott: u32,
         _avg_rott: f64,
         _std_rott: f64,
         _prev_rott: u32,
-    ) -> i8 {
+    ) -> CongestionState {
         unimplemented!()
     }
 }

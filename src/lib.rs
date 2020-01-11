@@ -5,8 +5,8 @@ mod network_emulator;
 
 pub mod hoip;
 
-pub mod k_selector;
+pub mod congestion_detection;
 
 pub use common::now;
-pub use network::{KSelector, NetworkModule};
+pub use network::{KPolicy, KPolicySIMD, KPolicySISD, NetworkModule};
 pub use network_emulator::setup_network_emulator;
