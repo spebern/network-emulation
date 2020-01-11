@@ -8,6 +8,10 @@ pub struct KSelectorTrend {
     gamma: f64,
     // The current trend index.
     s_f: f64,
+    // The cool off after k has been adapted.
+    cooloff: usize,
+    // The counter for counting the steps without adaption of k.
+    counter: usize,
 }
 
 impl Default for KSelectorTrend {
@@ -16,16 +20,20 @@ impl Default for KSelectorTrend {
             s_threshold: 0.4,
             gamma: 0.9,
             s_f: 0.0,
+            cooloff: 10,
+            counter: 0,
         }
     }
 }
 
 impl KSelectorTrend {
-    pub fn new(gamma: f64, s_threshold: f64) -> Self {
+    pub fn new(gamma: f64, s_threshold: f64, cooloff: usize) -> Self {
         Self {
             s_threshold,
             gamma,
             s_f: 0.0,
+            cooloff,
+            counter: 0,
         }
     }
 }
@@ -39,12 +47,19 @@ impl KSelector for KSelectorTrend {
         _std_rott: f64,
         prev_rott: u32,
     ) -> i8 {
+        if self.counter < self.cooloff {
+            self.counter += 1;
+            return current_k;
+        } else {
+            self.counter = 0;
+        }
+
         self.s_f = (1.0 - self.gamma) * self.s_f;
         if rott > prev_rott {
             self.s_f += self.gamma;
         }
         if self.s_threshold < self.s_f {
-            max(K_MAX, current_k + 1)
+            K_MAX
         } else {
             min(K_MIN, current_k - 1)
         }
