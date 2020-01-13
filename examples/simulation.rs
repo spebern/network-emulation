@@ -114,6 +114,7 @@ fn run_simulation<
         w,
         10,
         PayloadType::Master,
+        2000.0,
     );
     let slave = NetworkModule::<PayloadS2M, PayloadM2S, CDS, KPS>::new(
         "127.0.0.1:13370",
@@ -123,6 +124,7 @@ fn run_simulation<
         w,
         10,
         PayloadType::Slave,
+        2000.0,
     );
 
     let simulation_running = Arc::new(AtomicBool::new(true));

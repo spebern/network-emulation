@@ -4,6 +4,7 @@ mod ffi;
 mod network_analyzer;
 mod network_emulator;
 mod network_module;
+mod rate_limiter;
 
 pub mod hoip;
 

@@ -3,6 +3,7 @@ use crate::congestion_detection::CongestionDetector;
 use crate::hoip::{DelayIndicator, Header, Message, PayloadType, SamplingScheme, Serializable};
 use crate::k_policy::{KPolicy, K_MAX};
 use crate::network_analyzer::NetworkAnalyzer;
+use crate::rate_limiter::RateLimiter;
 use std::io;
 use std::net::UdpSocket;
 
@@ -17,6 +18,7 @@ pub struct NetworkModule<S, R, CD, KP> {
     k_policy: KP,
     k: i8,
     op: PayloadType,
+    rate_limiter: RateLimiter,
 }
 
 impl<S: Serializable, R: Serializable, CD: CongestionDetector, KP: KPolicy>
@@ -30,10 +32,13 @@ impl<S: Serializable, R: Serializable, CD: CongestionDetector, KP: KPolicy>
         w: f64,
         cooloff: usize,
         op: PayloadType,
+        rate: f64,
     ) -> Self {
         let sock = UdpSocket::bind(src_addr).unwrap();
         sock.connect(dest_addr).unwrap();
         sock.set_nonblocking(true).unwrap();
+
+        let rate_limiter = RateLimiter::new(rate);
 
         Self {
             sock,
@@ -46,6 +51,7 @@ impl<S: Serializable, R: Serializable, CD: CongestionDetector, KP: KPolicy>
             k_policy,
             k: K_MAX,
             op,
+            rate_limiter,
         }
     }
 
@@ -57,6 +63,15 @@ impl<S: Serializable, R: Serializable, CD: CongestionDetector, KP: KPolicy>
 
         self.payloads.push(payload);
         if self.payloads.len() < self.k as _ {
+            return;
+        }
+
+        let too_many = self.payloads.len() - self.k as usize;
+        if too_many > 0 {
+            self.payloads.drain(0..too_many);
+        }
+
+        if self.rate_limiter.limited() {
             return;
         }
 
@@ -129,5 +144,13 @@ impl<S: Serializable, R: Serializable, CD: CongestionDetector, KP: KPolicy>
 
     pub fn k(&self) -> i8 {
         self.k
+    }
+
+    pub fn rate(&self) -> f64 {
+        self.rate_limiter.rate()
+    }
+
+    pub fn set_rate(&mut self, rate: f64) {
+        self.rate_limiter.set_rate(rate);
     }
 }

@@ -8,7 +8,7 @@ type SlaveNetworkModule =
     NetworkModule<PayloadS2M, PayloadM2S, congestion_detection::Window, KPolicySDMI>;
 
 #[no_mangle]
-pub unsafe extern "C" fn master_network_module_new() -> *mut MasterNetworkModule {
+pub unsafe extern "C" fn master_network_module_new(rate: f64) -> *mut MasterNetworkModule {
     let w = 0.1;
     let congestion_detector = congestion_detection::Window::new(5);
     let k_policy = KPolicySDMI {};
@@ -20,6 +20,7 @@ pub unsafe extern "C" fn master_network_module_new() -> *mut MasterNetworkModule
         w,
         10,
         PayloadType::Master,
+        rate,
     );
     Box::into_raw(Box::new(network_module))
 }
@@ -53,6 +54,25 @@ pub unsafe extern "C" fn master_network_module_try_recv(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn master_network_module_rate(
+    network_module: *mut MasterNetworkModule,
+) -> f64 {
+    assert!(!network_module.is_null());
+    let network_module = &mut *network_module;
+    network_module.rate()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn master_network_module_set_rate(
+    network_module: *mut MasterNetworkModule,
+    rate: f64,
+) {
+    assert!(!network_module.is_null());
+    let network_module = &mut *network_module;
+    network_module.set_rate(rate);
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn master_network_module_free(network_module: *mut MasterNetworkModule) {
     if !network_module.is_null() {
         Box::from_raw(network_module);
@@ -60,7 +80,7 @@ pub unsafe extern "C" fn master_network_module_free(network_module: *mut MasterN
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn slave_network_module_new() -> *mut SlaveNetworkModule {
+pub unsafe extern "C" fn slave_network_module_new(rate: f64) -> *mut SlaveNetworkModule {
     let w = 0.1;
     let congestion_detector = congestion_detection::Window::new(5);
     let k_policy = KPolicySDMI {};
@@ -72,6 +92,7 @@ pub unsafe extern "C" fn slave_network_module_new() -> *mut SlaveNetworkModule {
         w,
         10,
         PayloadType::Master,
+        rate,
     );
     Box::into_raw(Box::new(network_module))
 }
@@ -102,6 +123,23 @@ pub unsafe extern "C" fn slave_network_module_try_recv(
     } else {
         false
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn slave_network_module_rate(network_module: *mut SlaveNetworkModule) -> f64 {
+    assert!(!network_module.is_null());
+    let network_module = &mut *network_module;
+    network_module.rate()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn slave_network_module_set_rate(
+    network_module: *mut SlaveNetworkModule,
+    rate: f64,
+) {
+    assert!(!network_module.is_null());
+    let network_module = &mut *network_module;
+    network_module.set_rate(rate);
 }
 
 #[no_mangle]
