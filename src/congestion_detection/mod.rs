@@ -8,6 +8,7 @@ pub use trend::Trend;
 pub use window::Window;
 pub use zig_zag::ZigZag;
 
+#[derive(Debug, Clone, Copy)]
 pub enum CongestionState {
     // The algorithm is not sure.
     NotSure,
@@ -20,7 +21,6 @@ pub enum CongestionState {
 pub trait CongestionDetector {
     fn is_congested(
         &mut self,
-        current_k: i8,
         rott: u32,
         avg_rott: f64,
         std_rott: f64,

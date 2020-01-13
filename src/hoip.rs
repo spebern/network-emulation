@@ -56,6 +56,7 @@ pub struct Message {
     pub payload: Vec<u8>,
 }
 
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PayloadS2M {
     force: [f32; 3],
@@ -67,6 +68,7 @@ impl PayloadS2M {
     }
 }
 
+#[repr(C)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct PayloadM2S {
     pos: [f32; 3],

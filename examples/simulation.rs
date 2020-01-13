@@ -5,7 +5,8 @@ use csv::Writer;
 use network_emulator::{
     congestion_detection::{self, CongestionDetector},
     hoip::{PayloadM2S, PayloadS2M, PayloadType, Serializable},
-    now, setup_network_emulator, KPolicy, KPolicySIMD, KPolicySISD, NetworkModule,
+    k_policy::{KPolicy, KPolicySDMI, KPolicySDMIExponentialBackoff, KPolicySDSI},
+    now, setup_network_emulator, NetworkModule,
 };
 use serde::Serialize;
 use std::{
@@ -31,9 +32,6 @@ pub struct Record {
     op: OP,
     delay_until_processed: f64,
     k: i8,
-
-    // Network module stats.
-    adjust_k: bool,
 }
 
 fn write_simulation_results(i: usize, rx_record: Receiver<Record>) {
@@ -45,15 +43,18 @@ fn write_simulation_results(i: usize, rx_record: Receiver<Record>) {
     let mut wtr = Writer::from_writer(out);
 
     let mut avg_delay = 0.0;
+    let mut avg_k = 0.0;
     let mut i = 0;
     for record in rx_record {
         avg_delay += record.delay_until_processed;
+        avg_k += record.k as f64;
         i += 1;
         wtr.serialize(record).expect("failed serialize record");
     }
     wtr.flush().expect("failed to flush writer");
     avg_delay /= i as f64;
-    println!("\tavg delay: {}ms", avg_delay);
+    avg_k /= i as f64;
+    println!("\tavg delay: {}ms avg k: {}", avg_delay, avg_k);
 }
 
 pub fn run_network<
@@ -78,15 +79,14 @@ pub fn run_network<
                         op,
                         delay_until_processed: (now - ts) as f64 / 1000.0,
                         k: network_module.k(),
-                        adjust_k: network_module.adjust_k(),
                     })
                     .expect("failed to send record from slave");
             }
-            if i % 2 == 0 {
+            if i % 4 == 0 {
                 network_module.send(sample_packet.clone());
             }
             i += 1;
-            thread::sleep(std::time::Duration::from_micros(500));
+            thread::sleep(std::time::Duration::from_micros(250));
         }
     })
 }
@@ -101,22 +101,28 @@ fn run_simulation<
     simulation_time: Duration,
     congestion_detector_mater: CDM,
     congestion_detector_slave: CDS,
+    k_policy_master: KPM,
+    k_policy_slave: KPS,
     w: f64,
     cooloff: usize,
 ) {
     let master = NetworkModule::<PayloadM2S, PayloadS2M, CDM, KPM>::new(
-        PayloadType::Master,
-        true,
+        "127.0.0.1:13380",
+        "127.0.0.1:13370",
         congestion_detector_mater,
+        k_policy_master,
         w,
         10,
+        PayloadType::Master,
     );
     let slave = NetworkModule::<PayloadS2M, PayloadM2S, CDS, KPS>::new(
-        PayloadType::Slave,
-        true,
+        "127.0.0.1:13370",
+        "127.0.0.1:13380",
         congestion_detector_slave,
+        k_policy_slave,
         w,
         10,
+        PayloadType::Slave,
     );
 
     let simulation_running = Arc::new(AtomicBool::new(true));
@@ -157,31 +163,48 @@ fn run_simulation<
 fn main() -> Result<(), Box<dyn Error>> {
     let simulation_time = Duration::from_secs(10);
 
-    for (i, rate_kbs) in (400..=600).step_by(50).enumerate() {
-        /*
-        let w = 0.1;
-        let n = 8;
-        println!("n: {}, rate: {}, w: {}", n, rate_kbs, w);
-
-
-        let k_selector_master = k_selector::window::KSelectorWindow::new(n);
-        let k_selector_slave = k_selector::window::KSelectorWindow::new(n);
-        */
-        let w = 0.1;
-        let cooloff = 5;
+    for (i, rate_kbs) in vec![276, 304, 360, 528, 600].into_iter().enumerate() {
+        let w = 0.10;
+        let cooloff = 30;
 
         println!("cooloff: {}, rate: {}, w: {}", cooloff, rate_kbs, w);
 
+        /*
         let congestion_detector_mater = congestion_detection::ZigZag::new();
         let congestion_detector_slave = congestion_detection::ZigZag::new();
+        */
 
-        setup_network_emulator(rate_kbs, 3);
+        /*
+        let congestion_detector_mater = congestion_detection::Trend::new(0.10, 0.30);
+        let congestion_detector_slave = congestion_detection::Trend::new(0.10, 0.30);
+        */
+
+        let congestion_detector_mater = congestion_detection::Window::new(5);
+        let congestion_detector_slave = congestion_detection::Window::new(5);
+
+        let k_policy_master = KPolicySDMI {};
+        let k_policy_slave = KPolicySDMI {};
+
+        /*
+        let k_policy_master = KPolicySDSI {};
+        let k_policy_slave = KPolicySDSI {};
+        */
+
+        /*
+        let k_policy_master = KPolicySDMIExponentialBackoff::new(200);
+        let k_policy_slave = KPolicySDMIExponentialBackoff::new(200);
+        */
+
+        setup_network_emulator(rate_kbs, 10);
         std::thread::sleep(Duration::from_secs(3));
-        run_simulation::<_, _, KPolicySIMD, KPolicySIMD>(
+
+        run_simulation(
             i,
             simulation_time,
             congestion_detector_mater,
             congestion_detector_slave,
+            k_policy_master,
+            k_policy_slave,
             w,
             cooloff,
         );

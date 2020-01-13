@@ -32,7 +32,6 @@ impl Trend {
 impl CongestionDetector for Trend {
     fn is_congested(
         &mut self,
-        _current_k: i8,
         rott: u32,
         _avg_rott: f64,
         _std_rott: f64,

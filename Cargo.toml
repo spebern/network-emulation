@@ -22,3 +22,10 @@ lazy_static = "1.4.0"
 [dev-dependencies]
 csv = "1"
 rusty-hook = "0.10"
+
+[lib]
+#name = "libhaptic_db"
+crate-type = ["staticlib"]
+
+[build-dependencies]
+cbindgen = "0.9.1"

@@ -1,0 +1,8 @@
+include_guard = "network_emulator_h"
+language = "C++"
+
+[fn]
+rename_args = "CamelCase"
+
+[struct]
+rename_fields = "CamelCase"

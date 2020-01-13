@@ -17,7 +17,6 @@ impl ZigZag {
 impl CongestionDetector for ZigZag {
     fn is_congested(
         &mut self,
-        current_k: i8,
         rott: u32,
         avg_rott: f64,
         std_rott: f64,

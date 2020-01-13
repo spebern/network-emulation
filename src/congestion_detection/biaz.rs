@@ -17,7 +17,6 @@ impl Biaz {
 impl CongestionDetector for Biaz {
     fn is_congested(
         &mut self,
-        _current_k: i8,
         _rott: u32,
         _avg_rott: f64,
         _std_rott: f64,

@@ -44,11 +44,10 @@ impl Default for Window {
 impl CongestionDetector for Window {
     fn is_congested(
         &mut self,
-        current_k: i8,
         rott: u32,
         avg_rott: f64,
         _std_rott: f64,
-        _prev_rott: u32,
+        prev_rott: u32,
     ) -> CongestionState {
         if rott as f64 > avg_rott {
             self.increasing_rotts_in_a_row += 1;
